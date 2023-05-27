@@ -2,6 +2,7 @@ venv/
 .idea/
 data/*
 !data/figures
+!data/weights.pt
 __pycache__/
 readme_yxy.txt
 a.avi

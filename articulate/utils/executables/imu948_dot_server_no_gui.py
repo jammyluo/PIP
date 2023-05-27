@@ -25,7 +25,7 @@ imus_addr = [
     '5e:07:42:d7:e3:76', #I
 ]
 
-addr = ('127.0.0.1', 8777)
+addr = ('183.47.110.142', 8777)
 ss = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 IMU948DotSet.set_buffer_len(2)
 clock = Clock()
