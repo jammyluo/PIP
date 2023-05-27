@@ -6,3 +6,4 @@ from .armature import *
 from .evaluator import *
 from .model import *
 from . import math
+from . import utils

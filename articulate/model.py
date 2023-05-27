@@ -11,7 +11,7 @@ import pickle
 import torch
 import tqdm
 import numpy as np
-from . import math as M
+from articulate import math as M
 
 
 class ParametricModel:

@@ -10,10 +10,10 @@ import torch
 from pygame.time import Clock
 from net import PIP
 import articulate as art
-import win32api
+#import win32api
 import os
 from config import *
-import keyboard
+# import keyboard
 import datetime
 
 
@@ -21,7 +21,7 @@ class IMUSet:
     def __init__(self):
         self.n_imus = 6
         self.cs = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.cs.bind(('127.0.0.1', 8777))
+        self.cs.bind(('0.0.0.0', 8777))
         self.cs.settimeout(3)
 
     def get(self):
@@ -52,6 +52,7 @@ def tpose_calibration():
         imu_set.clear()
         RSI = art.math.quaternion_to_rotation_matrix(imu_set.get()[1][0]).view(3, 3).t()
         RMI = torch.tensor([[0, 1, 0], [0, 0, 1], [1, 0, 0.]]).mm(RSI)
+        print('RMI Path %s', os.path.join(paths.temp_dir, 'RMI.pt') )
         torch.save(RMI, os.path.join(paths.temp_dir, 'RMI.pt'))
     else:
         RMI = torch.load(os.path.join(paths.temp_dir, 'RMI.pt'))
@@ -84,14 +85,14 @@ if __name__ == '__main__':
 
     is_executable = False
     server_for_unity = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_for_unity.bind(('127.0.0.1', 8888))
+    server_for_unity.bind(('0.0.0.0', 8888))
     server_for_unity.listen(1)
     print('Server start. Waiting for unity3d to connect.')
-    if paths.unity_file != '' and os.path.exists(paths.unity_file):
-        win32api.ShellExecute(0, 'open', os.path.abspath(paths.unity_file), '', '', 1)
-        is_executable = True
+    #if paths.unity_file != '' and os.path.exists(paths.unity_file):
+    #    win32api.ShellExecute(0, 'open', os.path.abspath(paths.unity_file), '', '', 1)
+    #    is_executable = True
     conn, addr = server_for_unity.accept()
-
+    print('Server start. unity3d connect.')
     imu_set = IMUSet()
     RMI, RSB = tpose_calibration()
     net = PIP()
@@ -122,7 +123,7 @@ if __name__ == '__main__':
         data['aM'].append(aM)
         data['RMB'].append(RMB)
 
-        if is_executable and keyboard.is_pressed('q'):
+        if is_executable : # and keyboard.is_pressed('q'):
             break
 
         print('\rfps: ', clock.get_fps(), end='')
