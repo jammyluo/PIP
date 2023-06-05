@@ -313,8 +313,7 @@ class DevicePayloadCharacteristic:
         if (rv.typeid & Acceleration.TYPEID) != 0: 
             rv.acceleration = Acceleration.from_reader(reader)
         if (rv.typeid & FreeAcceleration.TYPEID) != 0:
-            # rv.free_acceleration = FreeAcceleration.from_reader(reader)
-            rv.free_acceleration = Acceleration.from_reader(reader)
+            rv.free_acceleration = FreeAcceleration.from_reader(reader)
         if (rv.typeid & AngularVelocity.TYPEID) != 0:
             rv.angular_velocity = AngularVelocity.from_reader(reader)
         if (rv.typeid & MagneticField.TYPEID) != 0:
@@ -497,10 +496,10 @@ class Dot:
     async def akeep_live(self):
         # 保持连接 0x29
         await self.client.write_gatt_char(0x0005, bytes([0x29]))
-        await asyncio.sleep(0.2)
+        # await asyncio.sleep(0.2)
         # 尝试采用蓝牙高速通信特性 0x46
         await self.client.write_gatt_char(0x0005, bytes([0x46]))
-        await asyncio.sleep(0.2)         
+        # await asyncio.sleep(0.2)         
 
     # synchronously keep live the measurement (BLE spec sec. 3.1)
     # enable BLE notification to get the measurement data for real-time streaming before calling this
@@ -511,7 +510,7 @@ class Dot:
     # enable BLE notification to get the measurement data for real-time streaming before calling this
     async def aset_params(self, params):
         await self.client.write_gatt_char(0x0005, params)
-        await asyncio.sleep(0.2)    
+        # await asyncio.sleep(0.2)    
 
     # synchronously keep live the measurement (BLE spec sec. 3.1)
     # enable BLE notification to get the measurement data for real-time streaming before calling this
@@ -523,19 +522,47 @@ class Dot:
     async def astart_reporting(self):
         # 开始主动上报
         await self.client.write_gatt_char(0x0005, bytes([0x19]))
+        # await asyncio.sleep(0.2) 
 
     # synchronously start the measurement (BLE spec sec. 3.1)
     # enable BLE notification to get the measurement data for real-time streaming before calling this
     def start_reporting(self,):
         asyncio.get_event_loop().run_until_complete(self.astart_reporting())
 
-    # asynchronously stop the measurement (BLE spec sec. 3.1)
     async def astop_reporting(self):
+        # 关闭主动上报
         await self.client.write_gatt_char(0x0005, bytes([0x18]))
+        # await asyncio.sleep(0.2)    
 
-    # synchronously stop the measurement (BLE spec sec. 3.1)
-    def stop_reporting(self):
+    def stop_reporting(self,):
         asyncio.get_event_loop().run_until_complete(self.astop_reporting())
+
+    async def areset_accel(self):
+        # 关闭主动上报
+        await self.client.write_gatt_char(0x0005, bytes([0x17]))
+        # await asyncio.sleep(0.2)    
+
+    def reset_accel(self,):
+        asyncio.get_event_loop().run_until_complete(self.areset_accel())
+
+    async def areset_xyz(self):
+        #xyz坐标清零
+        await self.client.write_gatt_char(0x0005, bytes([0x06]))
+        await asyncio.sleep(0.2)    
+
+
+
+    def reset_xyz(self,):
+        asyncio.get_event_loop().run_until_complete(self.areset_xyz())
+
+    async def areset_z_coordinate(self):
+        #恢复默认Z轴角及坐标系
+        await self.client.write_gatt_char(0x0005, bytes([0x08]))
+        await asyncio.sleep(0.2)    
+
+    def reset_z_coordinate(self,):
+        asyncio.get_event_loop().run_until_complete(self.areset_z_coordinate())
+
 
 # asynchronously returns `True` if the provided `bleak.backends.device.BLEDevice`
 # is believed to be an XSens DOT sensor
@@ -755,10 +782,10 @@ if __name__ == '__main__':
         thread.start()
         asyncio.run_coroutine_threadsafe(coro, loop)
 
-
     # asyncio.run(single_sensor())
     # asyncio.run(multiple_sensor())
-    run_in_new_thread(single_sensor())
+    run_in_new_thread(scan())
+    # run_in_new_thread(single_sensor())
     # run_in_new_thread(multiple_sensor())
 
     import time

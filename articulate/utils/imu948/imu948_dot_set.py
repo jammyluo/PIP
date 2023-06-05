@@ -11,6 +11,7 @@ import time
 from .imu948dc import *
 from queue import Queue
 import torch
+from pygame.time import Clock
 
 
 _N = 10  # max 10 IMUs
@@ -25,9 +26,11 @@ class IMU948DotSet:
     _is_started = False
     _pending_event = None
     dots = []
+    clock = Clock()
 
     @staticmethod
     def _on_device_report(message_id, message_bytes, sensor_id=-1):
+        # IMU948DotSet.clock.tick(0)
         parsed = DeviceReportCharacteristic.from_bytes(message_bytes)
         if (parsed.TAG == 0x10):
             IMU948DotSet.dots[sensor_id].status = parsed.status
@@ -36,8 +39,10 @@ class IMU948DotSet:
             if q.full():
                 q.get()
             q.put(parsed.payload)
-        # print('IMU %d:' % sensor_id, parsed)
-
+        else:
+            print('IMU %d:' % sensor_id, parsed)
+        # print('\rreport fps: ', IMU948DotSet.clock.get_fps(), end='')
+        
 
     @staticmethod
     async def _multiple_sensor(devices: list):
@@ -64,18 +69,24 @@ class IMU948DotSet:
             while True:
                 try:
                     await d.aconnect(timeout=8)
+                    await d.adevice_report_start_notify(partial(IMU948DotSet._on_device_report, sensor_id=i))
+                    await d.akeep_live()
+                    await d.astop_reporting()
+                    await d.areset_xyz()
+                    await d.areset_z_coordinate()
+                    # await d.areset_accel()
                     break
                 except Exception as e:
                     print('\t[%d]' % i, e)
             print('\t[%d] connected' % i)
 
+        await asyncio.sleep(1)
         print('configuring the sensors ...')
         for i, d in enumerate(IMU948DotSet.dots):
-            await d.akeep_live()
-            await d.adevice_report_start_notify(partial(IMU948DotSet._on_device_report, sensor_id=i))
             # 参数设置
             isCompassOn = 0 #使用磁场融合姿态
             barometerFilter = 2
+            # Cmd_ReportTag = 0x0021 # 功能订阅标识
             Cmd_ReportTag = 0x0FFF # 功能订阅标识
             params = bytearray([0x00 for i in range(0,11)])
             params[0] = 0x12
@@ -83,19 +94,22 @@ class IMU948DotSet:
             params[2] = 255     #静止归零速度(单位cm/s) 0:不归零 255:立即归零
             params[3] = 0       #动态归零速度(单位cm/s) 0:不归零
             params[4] = ((barometerFilter&3)<<1) | (isCompassOn&1);   
-            params[5] = 30      #数据主动上报的传输帧率[取值0-250HZ], 0表示0.5HZ
-            params[6] = 1       #陀螺仪滤波系数[取值0-2],数值越大越平稳但实时性越差
+            params[5] = 60      #数据主动上报的传输帧率[取值0-250HZ], 0表示0.5HZ
+            params[6] = 2       #陀螺仪滤波系数[取值0-2],数值越大越平稳但实时性越差
             params[7] = 3       #加速计滤波系数[取值0-4],数值越大越平稳但实时性越差
-            params[8] = 5       #磁力计滤波系数[取值0-9],数值越大越平稳但实时性越差
+            params[8] = 8       #磁力计滤波系数[取值0-9],数值越大越平稳但实时性越差
             params[9] = Cmd_ReportTag&0xff
             params[10] = (Cmd_ReportTag>>8)&0xff
             await d.aset_params(params)
-            await d.adevice_info_read()
-            # await d.astart_reporting()
-            
-        print('reading device infos ...')
-        for i, d in enumerate(IMU948DotSet.dots):
-            print('\t[%d] %s' % (i, d.status))
+            await asyncio.sleep(0.2)
+            print('set_param:',i)
+
+        # await asyncio.sleep(1)
+        # print('reading device infos ...')
+        # for i, d in enumerate(IMU948DotSet.dots):
+        #     await d.adevice_info_read()
+        #     await asyncio.sleep(0.5)
+        #     print('\t[%d] %s' % (i, d.status))
 
         print('sensors connected')
         IMU948DotSet._is_connected = True
@@ -107,11 +121,12 @@ class IMU948DotSet:
             elif IMU948DotSet._pending_event == 1:   # shutdown
                 shutdown = True
                 break
-            elif IMU948DotSet._pending_event == 2:   # reset heading
-                print('reset heading ...')
+            elif IMU948DotSet._pending_event == 2:   # reset xyz
+                print('reset xyz ...')
                 for i, d in enumerate(IMU948DotSet.dots):
-                    await d.areset_heading()
-                print('\theading is reset')
+                    await d.areset_xyz()
+                    await asyncio.sleep(0.2)
+                print('\txyz is reset')
             elif IMU948DotSet._pending_event == 3:   # revert heading
                 print('revert heading ...')
                 for i, d in enumerate(IMU948DotSet.dots):
@@ -121,6 +136,7 @@ class IMU948DotSet:
                 print('start streaming ...')
                 for i, d in enumerate(IMU948DotSet.dots):
                     await d.astart_reporting()
+                    await asyncio.sleep(0.2)
                 IMU948DotSet._is_started = True
                 print('\tstreaming started')
             elif IMU948DotSet._pending_event == 5:  # stop streaming
@@ -216,9 +232,10 @@ class IMU948DotSet:
             parsed = IMU948DotSet._buffer[i].queue[0]
         else:
             parsed = IMU948DotSet._buffer[i].get(block=True, timeout=timeout)
-        t = parsed.timestamp.microseconds / 1e6
+        t = parsed.timestamp.microseconds / 1e3
         q = torch.tensor([parsed.quaternion.w, parsed.quaternion.x, parsed.quaternion.y, parsed.quaternion.z])
-        a = torch.tensor([parsed.free_acceleration.x, parsed.free_acceleration.y, parsed.free_acceleration.z])
+        a = torch.tensor([parsed.acceleration.x, parsed.acceleration.y, parsed.acceleration.z])
+        # a = torch.tensor([parsed.free_acceleration.x, parsed.free_acceleration.y, parsed.free_acceleration.z])
         return t, q, a
 
     @staticmethod
@@ -287,15 +304,15 @@ class IMU948DotSet:
             time.sleep(1)
 
     @staticmethod
-    def reset_heading():
+    def reset_xyz():
         r"""
-        Reset sensor heading (yaw).
+        Reset sensor xyz .
         """
-        if IMU948DotSet.is_started():
+        if IMU948DotSet.is_connected():
             IMU948DotSet._pending_event = 2
             IMU948DotSet._wait_for_pending_event()
         else:
-            print('[Warning] reset heading failed: IMU948DotSet is not started.')
+            print('[Warning] reset xyz failed: IMU948DotSet is not started.')
 
     @staticmethod
     def revert_heading_to_default():
@@ -373,8 +390,8 @@ if __name__ == '__main__':
         '2c:01:6e:17:62:3e',
     ]
     IMU948DotSet.sync_connect(imus)
+    # IMU948DotSet.reset_xyz()
     IMU948DotSet.start_streaming()
-    IMU948DotSet.reset_heading()
     with RotationViewer(len(imus)) as viewer:
         IMU948DotSet.clear()
         for _ in range(60 * 10):  # 10s
