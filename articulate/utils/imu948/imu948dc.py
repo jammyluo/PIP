@@ -496,7 +496,7 @@ class Dot:
     async def akeep_live(self):
         # 保持连接 0x29
         await self.client.write_gatt_char(0x0005, bytes([0x29]))
-        # await asyncio.sleep(0.2)
+        await asyncio.sleep(0.2)
         # 尝试采用蓝牙高速通信特性 0x46
         await self.client.write_gatt_char(0x0005, bytes([0x46]))
         # await asyncio.sleep(0.2)         
@@ -540,17 +540,15 @@ class Dot:
     async def areset_accel(self):
         # 关闭主动上报
         await self.client.write_gatt_char(0x0005, bytes([0x17]))
-        # await asyncio.sleep(0.2)    
 
     def reset_accel(self,):
         asyncio.get_event_loop().run_until_complete(self.areset_accel())
 
     async def areset_xyz(self):
         #xyz坐标清零
-        await self.client.write_gatt_char(0x0005, bytes([0x06]))
+        await self.client.write_gatt_char(0x0005, bytes([0x05]))
         await asyncio.sleep(0.2)    
-
-
+        await self.client.write_gatt_char(0x0005, bytes([0x06]))
 
     def reset_xyz(self,):
         asyncio.get_event_loop().run_until_complete(self.areset_xyz())
@@ -558,7 +556,6 @@ class Dot:
     async def areset_z_coordinate(self):
         #恢复默认Z轴角及坐标系
         await self.client.write_gatt_char(0x0005, bytes([0x08]))
-        await asyncio.sleep(0.2)    
 
     def reset_z_coordinate(self,):
         asyncio.get_event_loop().run_until_complete(self.areset_z_coordinate())
@@ -718,10 +715,6 @@ if __name__ == '__main__':
             await asyncio.sleep(1)
             await device.adisconnect()
             print('stop')
-
-            # await device.astop_streaming()
-            # await device.amedium_payload_stop_notify()
-            # await device.adevice_report_stop_notify()
             
         print('Not connected')
 

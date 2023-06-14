@@ -16,12 +16,14 @@ from pygame.time import Clock
 
 _N = 10  # max 10 IMUs
 
+IsPhone = False
 
 class IMU948DotSet:
     # _lock = [threading.Lock() for _ in range(_N)]   # lists are thread-safe
     _SZ = 180    # max queue size
     _loop = None
     _buffer = [Queue(180) for _ in range(_N)]
+    _bytes_buffer = [Queue(180) for _ in range(_N)]
     _is_connected = False
     _is_started = False
     _pending_event = None
@@ -30,17 +32,21 @@ class IMU948DotSet:
 
     @staticmethod
     def _on_device_report(message_id, message_bytes, sensor_id=-1):
-        # IMU948DotSet.clock.tick(0)
         parsed = DeviceReportCharacteristic.from_bytes(message_bytes)
         if (parsed.TAG == 0x10):
             IMU948DotSet.dots[sensor_id].status = parsed.status
         if (parsed.TAG == 0x11):
-            q = IMU948DotSet._buffer[sensor_id]
-            if q.full():
-                q.get()
-            q.put(parsed.payload)
-        else:
-            print('IMU %d:' % sensor_id, parsed)
+            if IsPhone :
+                bq = IMU948DotSet._bytes_buffer[sensor_id]
+                if bq.full():
+                    bq.get()
+                bq.put(message_bytes)
+            else:    
+                q = IMU948DotSet._buffer[sensor_id]
+                if q.full():
+                    q.get()
+                q.put(parsed.payload)
+        
         # print('\rreport fps: ', IMU948DotSet.clock.get_fps(), end='')
         
 
@@ -69,25 +75,38 @@ class IMU948DotSet:
             while True:
                 try:
                     await d.aconnect(timeout=8)
-                    await d.adevice_report_start_notify(partial(IMU948DotSet._on_device_report, sensor_id=i))
-                    await d.akeep_live()
-                    await d.astop_reporting()
-                    await d.areset_xyz()
-                    await d.areset_z_coordinate()
-                    # await d.areset_accel()
                     break
                 except Exception as e:
                     print('\t[%d]' % i, e)
             print('\t[%d] connected' % i)
-
-        await asyncio.sleep(1)
+        print('start_notify ...')
+        for i, d in enumerate(IMU948DotSet.dots):
+            try:
+                await d.adevice_report_start_notify(partial(IMU948DotSet._on_device_report, sensor_id=i))
+            except Exception as e:
+                print('\t[%d]' % i, e)
+            print('\t[%d] start_notify' % i)
+        print('keep_live ...')
+        for i, d in enumerate(IMU948DotSet.dots):
+            try:
+                await d.akeep_live()
+            except Exception as e:
+                print('\t[%d]' % i, e)
+            print('\t[%d] keep_live' % i)
+        print('stop_reporting ...')
+        for i, d in enumerate(IMU948DotSet.dots):
+            try:
+                await d.astop_reporting()
+            except Exception as e:
+                print('\t[%d]' % i, e)
+            print('\t[%d] stop_reporting' % i)
         print('configuring the sensors ...')
         for i, d in enumerate(IMU948DotSet.dots):
             # 参数设置
             isCompassOn = 0 #使用磁场融合姿态
             barometerFilter = 2
-            # Cmd_ReportTag = 0x0021 # 功能订阅标识
-            Cmd_ReportTag = 0x0FFF # 功能订阅标识
+            Cmd_ReportTag = 0x0021 # 功能订阅标识
+            # Cmd_ReportTag = 0x0FFF # 功能订阅标识
             params = bytearray([0x00 for i in range(0,11)])
             params[0] = 0x12
             params[1] = 5       #静止状态加速度阀值
@@ -101,14 +120,13 @@ class IMU948DotSet:
             params[9] = Cmd_ReportTag&0xff
             params[10] = (Cmd_ReportTag>>8)&0xff
             await d.aset_params(params)
-            await asyncio.sleep(0.2)
             print('set_param:',i)
 
-        # await asyncio.sleep(1)
         # print('reading device infos ...')
         # for i, d in enumerate(IMU948DotSet.dots):
         #     await d.adevice_info_read()
-        #     await asyncio.sleep(0.5)
+        # await asyncio.sleep(1)
+        # for i, d in enumerate(IMU948DotSet.dots):
         #     print('\t[%d] %s' % (i, d.status))
 
         print('sensors connected')
@@ -122,11 +140,13 @@ class IMU948DotSet:
                 shutdown = True
                 break
             elif IMU948DotSet._pending_event == 2:   # reset xyz
-                print('reset xyz ...')
+                print('reset_xyz ...')
                 for i, d in enumerate(IMU948DotSet.dots):
-                    await d.areset_xyz()
-                    await asyncio.sleep(0.2)
-                print('\txyz is reset')
+                    try:
+                        await d.areset_xyz()
+                    except Exception as e:
+                        print('\t[%d]' % i, e)
+                    print('\t[%d] reset_xyz' % i)
             elif IMU948DotSet._pending_event == 3:   # revert heading
                 print('revert heading ...')
                 for i, d in enumerate(IMU948DotSet.dots):
@@ -201,8 +221,11 @@ class IMU948DotSet:
         """
         if i < 0:
             IMU948DotSet._buffer = [Queue(IMU948DotSet._SZ) for _ in range(_N)]  # max 10 IMUs
+            IMU948DotSet._bytes_buffer = [Queue(IMU948DotSet._SZ) for _ in range(_N)]  # max 10 IMUs
+            
         else:
             IMU948DotSet._buffer[i] = Queue(IMU948DotSet._SZ)
+            IMU948DotSet._bytes_buffer[i] = Queue(IMU948DotSet._SZ)
 
     @staticmethod
     def is_started() -> bool:
@@ -218,6 +241,22 @@ class IMU948DotSet:
         """
         return IMU948DotSet._is_connected
 
+    @staticmethod
+    def get_bytes_msg(i: int, timeout=None, preserve_last=False):
+        r"""
+        Get the next measurements of the ith IMU. May be blocked.
+
+        :param i: The index of the query sensor.
+        :param timeout: If non-negative, block at most timeout seconds and raise an Empty error.
+        :param preserve_last: If True, do not delete the measurement from the buffer if it is the last one.
+        :return: timestamp (seconds), quaternion (wxyz), and free acceleration (m/s^2 in the global inertial frame)
+        """
+        if preserve_last and IMU948DotSet._bytes_buffer[i].qsize() == 1:
+            bytes_msg = IMU948DotSet._bytes_buffer[i].queue[0]
+        else:
+            bytes_msg = IMU948DotSet._bytes_buffer[i].get(block=True, timeout=timeout)
+        return bytes_msg
+    
     @staticmethod
     def get(i: int, timeout=None, preserve_last=False):
         r"""
@@ -235,7 +274,6 @@ class IMU948DotSet:
         t = parsed.timestamp.microseconds / 1e3
         q = torch.tensor([parsed.quaternion.w, parsed.quaternion.x, parsed.quaternion.y, parsed.quaternion.z])
         a = torch.tensor([parsed.acceleration.x, parsed.acceleration.y, parsed.acceleration.z])
-        # a = torch.tensor([parsed.free_acceleration.x, parsed.free_acceleration.y, parsed.free_acceleration.z])
         return t, q, a
 
     @staticmethod
