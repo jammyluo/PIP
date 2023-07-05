@@ -95,6 +95,8 @@ def process_amass():
 
 def process_dipimu():
     imu_mask = [7, 8, 11, 12, 0, 2]
+    # The order of IMUs is: [head, spine2, belly, lchest, rchest, lshoulder, rshoulder, lelbow, relbow, lhip, rhip, lknee, rknee, lwrist, lwrist, lankle, rankle].
+
     test_split = ['s_09', 's_10']
     accs, oris, poses, trans = [], [], [], []
 

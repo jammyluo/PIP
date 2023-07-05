@@ -16,14 +16,12 @@ from pygame.time import Clock
 
 _N = 10  # max 10 IMUs
 
-IsPhone = False
 
 class IMU948DotSet:
     # _lock = [threading.Lock() for _ in range(_N)]   # lists are thread-safe
     _SZ = 180    # max queue size
     _loop = None
     _buffer = [Queue(180) for _ in range(_N)]
-    _bytes_buffer = [Queue(180) for _ in range(_N)]
     _is_connected = False
     _is_started = False
     _pending_event = None
@@ -36,16 +34,12 @@ class IMU948DotSet:
         if (parsed.TAG == 0x10):
             IMU948DotSet.dots[sensor_id].status = parsed.status
         if (parsed.TAG == 0x11):
-            if IsPhone :
-                bq = IMU948DotSet._bytes_buffer[sensor_id]
-                if bq.full():
-                    bq.get()
-                bq.put(message_bytes)
-            else:    
-                q = IMU948DotSet._buffer[sensor_id]
-                if q.full():
-                    q.get()
-                q.put(parsed.payload)
+            q = IMU948DotSet._buffer[sensor_id]
+            if q.full():
+                q.get()
+            # q.put(parsed.payload)
+            q.put(message_bytes)
+            
         
         # print('\rreport fps: ', IMU948DotSet.clock.get_fps(), end='')
         
@@ -56,6 +50,7 @@ class IMU948DotSet:
         # do not use asyncio.gather() and run these in parallel, it has bugs
         from functools import partial
 
+        # ascan_all(10)
         print('finding devices ...')
         for i, d in enumerate(devices):
             while True:
@@ -79,13 +74,7 @@ class IMU948DotSet:
                 except Exception as e:
                     print('\t[%d]' % i, e)
             print('\t[%d] connected' % i)
-        print('start_notify ...')
-        for i, d in enumerate(IMU948DotSet.dots):
-            try:
-                await d.adevice_report_start_notify(partial(IMU948DotSet._on_device_report, sensor_id=i))
-            except Exception as e:
-                print('\t[%d]' % i, e)
-            print('\t[%d] start_notify' % i)
+
         print('keep_live ...')
         for i, d in enumerate(IMU948DotSet.dots):
             try:
@@ -93,17 +82,18 @@ class IMU948DotSet:
             except Exception as e:
                 print('\t[%d]' % i, e)
             print('\t[%d] keep_live' % i)
-        print('stop_reporting ...')
-        for i, d in enumerate(IMU948DotSet.dots):
-            try:
-                await d.astop_reporting()
-            except Exception as e:
-                print('\t[%d]' % i, e)
-            print('\t[%d] stop_reporting' % i)
+
+        # print('stop_reporting ...')
+        # for i, d in enumerate(IMU948DotSet.dots):
+        #     try:
+        #         await d.astop_reporting()
+        #     except Exception as e:
+        #         print('\t[%d]' % i, e)
+        #     print('\t[%d] stop_reporting' % i)
         print('configuring the sensors ...')
         for i, d in enumerate(IMU948DotSet.dots):
             # 参数设置
-            isCompassOn = 0 #使用磁场融合姿态
+            isCompassOn = 1 #使用磁场融合姿态
             barometerFilter = 2
             Cmd_ReportTag = 0x0021 # 功能订阅标识
             # Cmd_ReportTag = 0x0FFF # 功能订阅标识
@@ -122,6 +112,14 @@ class IMU948DotSet:
             await d.aset_params(params)
             print('set_param:',i)
 
+        print('start_notify ...')
+        for i, d in enumerate(IMU948DotSet.dots):
+            try:
+                await d.adevice_report_start_notify(partial(IMU948DotSet._on_device_report, sensor_id=i))
+            except Exception as e:
+                print('\t[%d]' % i, e)
+            print('\t[%d] start_notify' % i)
+            
         # print('reading device infos ...')
         # for i, d in enumerate(IMU948DotSet.dots):
         #     await d.adevice_info_read()
@@ -221,11 +219,9 @@ class IMU948DotSet:
         """
         if i < 0:
             IMU948DotSet._buffer = [Queue(IMU948DotSet._SZ) for _ in range(_N)]  # max 10 IMUs
-            IMU948DotSet._bytes_buffer = [Queue(IMU948DotSet._SZ) for _ in range(_N)]  # max 10 IMUs
             
         else:
             IMU948DotSet._buffer[i] = Queue(IMU948DotSet._SZ)
-            IMU948DotSet._bytes_buffer[i] = Queue(IMU948DotSet._SZ)
 
     @staticmethod
     def is_started() -> bool:
@@ -251,10 +247,10 @@ class IMU948DotSet:
         :param preserve_last: If True, do not delete the measurement from the buffer if it is the last one.
         :return: timestamp (seconds), quaternion (wxyz), and free acceleration (m/s^2 in the global inertial frame)
         """
-        if preserve_last and IMU948DotSet._bytes_buffer[i].qsize() == 1:
-            bytes_msg = IMU948DotSet._bytes_buffer[i].queue[0]
+        if preserve_last and IMU948DotSet._buffer[i].qsize() == 1:
+            bytes_msg = IMU948DotSet._buffer[i].queue[0]
         else:
-            bytes_msg = IMU948DotSet._bytes_buffer[i].get(block=True, timeout=timeout)
+            bytes_msg = IMU948DotSet._buffer[i].get(block=True, timeout=timeout)
         return bytes_msg
     
     @staticmethod

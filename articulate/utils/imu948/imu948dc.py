@@ -547,8 +547,9 @@ class Dot:
     async def areset_xyz(self):
         #xyz坐标清零
         await self.client.write_gatt_char(0x0005, bytes([0x05]))
-        await asyncio.sleep(0.2)    
+        await asyncio.sleep(0.2)
         await self.client.write_gatt_char(0x0005, bytes([0x06]))
+        await asyncio.sleep(0.2)
 
     def reset_xyz(self,):
         asyncio.get_event_loop().run_until_complete(self.areset_xyz())
